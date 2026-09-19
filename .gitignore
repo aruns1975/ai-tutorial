@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.uvicorn.pid
+.uvicorn.log
+
+# Holds resolved values for the external vars .env indirects to
+# (POSTGRES_ROOT_PASSWORD, etc.) — see scripts/lib/env.sh. Never commit
+# this; .env itself is safe to commit since it holds no real secrets.
+.env.local
