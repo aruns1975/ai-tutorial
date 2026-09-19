@@ -4,6 +4,9 @@ __pycache__/
 .uvicorn.pid
 .uvicorn.log
 
+# PyCharm project settings — local IDE state, not shared project config.
+.idea/
+
 # Holds resolved values for the external vars .env indirects to
 # (POSTGRES_ROOT_PASSWORD, etc.) — see scripts/lib/env.sh. Never commit
 # this; .env itself is safe to commit since it holds no real secrets.
