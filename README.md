@@ -82,6 +82,22 @@ uv run uvicorn main:app --host 0.0.0.0 --port 18282
 PyCharm's existing "Python.FastAPI" run configuration (targeting `main.py`)
 also works unchanged, under the same caveat.
 
+### Running the MCP server
+
+The `/langchain/mcp/*` and `/langgraph/mcp` endpoints (see below) connect
+to this project's own MCP server — a separate process, started the same
+way:
+
+```bash
+scripts/start_mcp_server.sh    # port 18383 (MCP_SERVER_PORT in .env)
+scripts/status_mcp_server.sh
+scripts/stop_mcp_server.sh
+```
+
+See [docs/mcp-server.md](docs/mcp-server.md) for what it exposes (tools,
+a prompt, two resources) and why it's `run_mcp_server.py` at the root, not
+`mcp.py` (naming collision with the installed `mcp` package).
+
 ### Using Claude Code? Skip the scripts
 
 This repo ships project-level Claude Code skills and slash commands (in
@@ -91,6 +107,7 @@ clone, so anyone opening this project in Claude Code gets them for free.
 ```
 /app start | stop | status | restart      (or just ask: "start the app")
 /infra start | stop | status | restart    (or just ask: "start the infra")
+/mcp start | stop | status | restart      (or just ask: "start the mcp server")
 ```
 
 ## LangChain concepts and endpoints
@@ -105,6 +122,7 @@ clone, so anyone opening this project in Claude Code gets them for free.
 | Agents (ReAct) | `POST /langchain/agents` | [docs/langchain/06-react-agents.md](docs/langchain/06-react-agents.md) |
 | RAG | `POST /langchain/rag/ingest`, `POST /langchain/rag/query` | [docs/langchain/07-rag/00-overview.md](docs/langchain/07-rag/00-overview.md) |
 | Streaming | `POST /langchain/streaming` | [docs/langchain/08-streaming.md](docs/langchain/08-streaming.md) |
+| MCP client | `POST /langchain/mcp/tool-calling`, `POST /langchain/mcp/agent`, `POST /langchain/mcp/prompt`, `GET /langchain/mcp/resource` | [docs/langchain/09-mcp-client.md](docs/langchain/09-mcp-client.md) |
 
 Each doc page has a full curl example. Quick start:
 
@@ -149,6 +167,7 @@ on), mounted under `/langgraph/**`:
 | Persistence / checkpointers | `POST /langgraph/persistence/{session_id}` | [docs/langgraph/06-persistence.md](docs/langgraph/06-persistence.md) |
 | Multi-agent / subgraphs | `POST /langgraph/multi-agent` | [docs/langgraph/07-multi-agent.md](docs/langgraph/07-multi-agent.md) |
 | RAG (query rewriter + retriever + generator sub-graphs) | `POST /langgraph/rag/{session_id}` | [docs/langgraph/08-rag.md](docs/langgraph/08-rag.md) |
+| MCP client | `POST /langgraph/mcp`, `POST /langgraph/mcp/agent` | [docs/langgraph/09-mcp-client.md](docs/langgraph/09-mcp-client.md) |
 
 Same `model` query parameter convention as above. `persistence` and
 `interrupts` additionally accept `memory_backend` (`"memory"` default,
@@ -173,6 +192,15 @@ The RAG concept's `redis` and `postgres` backends need `scripts/start_infra.sh`
 nothing. See [docs/langchain/07-rag/](docs/langchain/07-rag/) for backend-
 specific details, including how the Postgres table is indexed and how the
 Postgres root/app user split works.
+
+## This project's own MCP server
+
+The MCP client concepts (`/langchain/mcp/*`, `/langgraph/mcp`) connect to
+an MCP server this same repo hosts, over streamable-http on port `18383`
+(`MCP_SERVER_PORT` in `.env`) — a separate process from the main app, no
+Docker needed. See [docs/mcp-server.md](docs/mcp-server.md) for what it
+exposes and `scripts/start_mcp_server.sh`/`scripts/status_mcp_server.sh`/
+`scripts/stop_mcp_server.sh` (or `/mcp start|status|stop`) to run it.
 
 ## Known gaps
 

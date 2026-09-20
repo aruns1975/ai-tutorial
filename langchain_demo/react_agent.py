@@ -33,6 +33,28 @@ from tools.search_tools import web_search
 
 _AGENT_TOOLS = [adder, subtractor, multiplier, divider, current_date, days_between, web_search]
 
+# Without this, gemma4 was observed to re-call a tool with IDENTICAL
+# arguments over a dozen times after already getting the answer, before
+# finally emitting a plain-text final message — create_react_agent's
+# default ReAct loop has no built-in "stop once you have the result"
+# instruction, and a weaker model doesn't reliably infer it. llama3.2
+# didn't need this, but it's harmless for it too. Public (not
+# underscore-prefixed) because mcp_client.py's run_mcp_agent_demo reuses
+# it verbatim for the same create_react_agent call shape — no reason to
+# maintain a second copy of the same instruction.
+AGENT_SYSTEM_PROMPT = (
+    "You are a helpful assistant with access to tools. Once a tool call has "
+    "returned a result that answers the user's question, respond directly "
+    "with the final answer in plain text. Never call the same tool with the "
+    "same arguments more than once."
+)
+
+# Caps reason/act rounds per call, instead of LangGraph's default 25 — if
+# AGENT_SYSTEM_PROMPT's instruction still doesn't stop a repeat-call
+# loop, this fails fast with a clear GraphRecursionError instead of
+# quietly grinding through many more rounds.
+_AGENT_RECURSION_LIMIT = 15
+
 
 class AgentMemoryBackend(str, Enum):
     memory = "memory"
@@ -85,7 +107,9 @@ def create_agent_cache():
         key = (model, memory_backend)
         if key not in agents:
             checkpointer = _CHECKPOINTER_BUILDERS[memory_backend]()
-            agents[key] = create_react_agent(get_chat_model(model), tools=_AGENT_TOOLS, checkpointer=checkpointer)
+            agents[key] = create_react_agent(
+                get_chat_model(model), tools=_AGENT_TOOLS, checkpointer=checkpointer, prompt=AGENT_SYSTEM_PROMPT
+            )
         return agents[key]
 
     return get_agent
@@ -117,7 +141,7 @@ def run_agent_demo(
     thread_id = session_id or str(uuid.uuid4())
     result = agent.invoke(
         {"messages": [("human", user_message)]},
-        config={"configurable": {"thread_id": thread_id}},
+        config={"configurable": {"thread_id": thread_id}, "recursion_limit": _AGENT_RECURSION_LIMIT},
     )
     messages = result["messages"]
 

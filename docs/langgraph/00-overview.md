@@ -23,6 +23,7 @@ separate `/langgraph/**` route prefix.
 | Persistence / checkpointers | `persistence.py` | `POST /langgraph/persistence/{session_id}` | [06-persistence.md](06-persistence.md) |
 | Multi-agent / subgraphs | `multi_agent.py` | `POST /langgraph/multi-agent` | [07-multi-agent.md](07-multi-agent.md) |
 | RAG (query rewriter + retriever + generator sub-graphs) | `rag/` | `POST /langgraph/rag/{session_id}` | [08-rag.md](08-rag.md) |
+| MCP client | `mcp_client.py` | `POST /langgraph/mcp`, `POST /langgraph/mcp/agent` | [09-mcp-client.md](09-mcp-client.md) |
 
 Every concept file lives in `langgraph_demo/`; every endpoint is wired up
 by a matching `controllers/langgraph_<slug>_controller.py`, following the
@@ -46,6 +47,8 @@ exact same architecture as the LangChain concepts (see the project root
   (`"memory"` default, `"redis"`, or `"postgres"`) — `redis`/`postgres`
   need `scripts/start_infra.sh`, the same infra every other concept's
   Redis/Postgres backend uses.
+- `mcp_client.py` needs `scripts/start_mcp_server.sh` running (this
+  project's own MCP server, port `18383`) — see `docs/mcp-server.md`.
 
 ## Compare to the equivalent LangChain concepts
 
@@ -56,3 +59,4 @@ exact same architecture as the LangChain concepts (see the project root
 | Persistence / checkpointers | `memory_conversation.py` | `RunnableWithMessageHistory` (used there) is deprecated upstream specifically in favor of LangGraph's checkpointers (used here). |
 | Multi-agent / subgraphs | `react_agent.py`'s prebuilt agent | The prebuilt agent is one graph LangGraph ships for you; this concept hand-builds a small multi-graph system to show what's underneath it. |
 | RAG sub-graphs | `rag_demo.py` | The LangChain version is one straight-line function; this concept decomposes the same pipeline into three independently-compiled, independently-testable sub-graphs (query rewriter, retriever, generator) stitched together by a parent graph. |
+| MCP client | `mcp_client.py`'s LangChain counterpart | Same MCP server, same fetched tools — this one binds them inside a single-node `StateGraph` instead of a plain function, showing an MCP tool is just a LangChain `BaseTool` regardless of which framework's execution model calls it. |

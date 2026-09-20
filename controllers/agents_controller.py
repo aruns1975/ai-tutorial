@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel
 
 from langchain_demo.react_agent import AgentMemoryBackend, run_agent_demo
@@ -19,4 +20,10 @@ def agents(
     session_id: str | None = None,
 ) -> dict:
     """Calls `langchain_demo.react_agent.run_agent_demo`."""
-    return run_agent_demo(payload.message, model, memory_backend, session_id)
+    try:
+        return run_agent_demo(payload.message, model, memory_backend, session_id)
+    except GraphRecursionError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"{exc} The agent likely got stuck re-calling a tool instead of answering.",
+        ) from exc

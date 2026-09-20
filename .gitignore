@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 .uvicorn.pid
 .uvicorn.log
+.mcp_server.pid
+.mcp_server.log
 
 # PyCharm project settings — local IDE state, not shared project config.
 .idea/

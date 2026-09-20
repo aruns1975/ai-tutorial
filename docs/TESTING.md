@@ -22,7 +22,8 @@ otherwise.
 
 ```bash
 scripts/start_app.sh          # starts the app on :18282
-scripts/start_infra.sh    # only needed for RAG's redis/postgres backends
+scripts/start_infra.sh        # only needed for RAG's redis/postgres backends
+scripts/start_mcp_server.sh   # only needed for §9/§18's MCP client concepts
 ```
 
 ---
@@ -361,6 +362,27 @@ thread. Swap `memory_backend=postgres` for `redis` to see the same proof
 against the other persistent backend — only `memory_backend=memory` would
 fail this test, by design.
 
+### 6d. Multi-turn follow-up with gemma4 — verifying the tool-repeat-loop fix
+
+```bash
+curl -s -X POST "localhost:18282/langchain/agents?model=gemma4&session_id=testing-doc-agent-followup" \
+  -H 'Content-Type: application/json' -d '{"message": "What is 3+4?"}'
+
+curl -s -X POST "localhost:18282/langchain/agents?model=gemma4&session_id=testing-doc-agent-followup" \
+  -H 'Content-Type: application/json' -d '{"message": "What happens when I add 5 to it?"}'
+```
+
+**Why this input demonstrates the concept:** count the `steps` in the
+second response — it should be exactly 6 (3 from turn 1's `adder(3,4)`
+call/result/message, 3 from turn 2's `adder(7,5)` call/result/message).
+Before `AGENT_SYSTEM_PROMPT` was added to `react_agent.py`, this exact
+input made gemma4 call `adder(7, 5)` over a dozen times *after* already
+getting the correct result (12), before finally answering in plain text
+— a real, reported, reproducible failure, not a hypothetical. If you
+ever see a tool called with identical arguments more than once in a
+row, that's this failure mode recurring, not a session/memory bug — see
+`docs/langchain/06-react-agents.md`'s Gotchas.
+
 ---
 
 ## 7. RAG — compare all three backends on the same question
@@ -439,6 +461,64 @@ lines shows the actual words/emoji are all there). This is
 `streaming_demo.py` — don't "fix" it by filtering empty chunks unless
 asked.
 
+## 9. MCP Client (LangChain)
+
+Needs `scripts/start_mcp_server.sh` running first (port `18383`).
+
+```bash
+# Tools: fetched from the MCP server, not imported locally.
+curl -s -X POST localhost:18282/langchain/mcp/tool-calling \
+  -H 'Content-Type: application/json' -d '{"message": "what is 12 times 7?"}'
+
+# Prompts: fetch the server's explain_concept prompt.
+curl -s -X POST localhost:18282/langchain/mcp/prompt \
+  -H 'Content-Type: application/json' -d '{"topic": "RAG"}'
+
+# Resources: dynamic (default) vs. static.
+curl -s localhost:18282/langchain/mcp/resource
+curl -s "localhost:18282/langchain/mcp/resource?uri=data://ai-tutorial/rag-corpus"
+```
+
+**Why this input demonstrates the concept:** `multiplier` in the
+tool-calling response's `tool_calls` is the exact same function
+`/langchain/tool-calling` (§3) binds directly — the only difference
+between the two endpoints is that this one fetched it from
+`mcp_server/tools.py` over HTTP first. Comparing the two side by side is
+the point, not the arithmetic.
+
+```bash
+# Agent: same MCP-sourced tools, but a full ReAct loop instead of the
+# single hand-executed round above. session_id carries memory across
+# calls, same as /langchain/agents.
+curl -s -X POST "localhost:18282/langchain/mcp/agent?session_id=testing-doc-mcp-agent" \
+  -H 'Content-Type: application/json' -d '{"message": "what is 3+4?"}'
+curl -s -X POST "localhost:18282/langchain/mcp/agent?session_id=testing-doc-mcp-agent" \
+  -H 'Content-Type: application/json' -d '{"message": "what happens if I add 5 to the result?"}'
+```
+
+**Why this input demonstrates the concept:** turn 2's `steps` shows the
+agent calling `adder(7, 5)` exactly once — proof `session_id` carried
+turn 1's result (7) into this call, and proof `AGENT_SYSTEM_PROMPT`
+(shared from `react_agent.py`, see §6d) stops it from re-calling `adder`
+after already getting the answer. Omitting `session_id` on turn 2
+instead sends a fresh, historyless thread with no idea what "the
+result" means. Compare this endpoint's `steps` to `/langchain/agents`
+(§6): same `create_react_agent` machinery and the same
+`session_id`/`memory_backend` shape, the only difference is these tools
+were fetched from `mcp_server/tools.py` over MCP instead of
+imported from `tools/*.py` directly.
+
+```bash
+# Confirm the clean-503 (not 500) path: stop the MCP server first.
+scripts/stop_mcp_server.sh
+curl -s -w '\n%{http_code}\n' -X POST localhost:18282/langchain/mcp/tool-calling \
+  -H 'Content-Type: application/json' -d '{"message": "what is 2+2?"}'
+scripts/start_mcp_server.sh
+```
+
+See [docs/langchain/09-mcp-client.md](langchain/09-mcp-client.md) and
+[docs/mcp-server.md](mcp-server.md) for the full design.
+
 ---
 
 # Part 2: LangGraph Concepts
@@ -449,7 +529,7 @@ for how this package relates to Part 1's LangChain concepts. Same
 convention: `model` is an optional query parameter everywhere an LLM is
 involved, defaulting to `llama3.2`.
 
-## 9. StateGraph Basics
+## 10. StateGraph Basics
 
 ```bash
 curl -s -X POST localhost:18282/langgraph/stategraph \
@@ -463,7 +543,7 @@ independently. Compare with `docs/langchain/02-lcel-chains.md`'s pipe
 chain: same "step 1 feeds step 2" idea, expressed as graph nodes+edges
 instead of a `|` pipe.
 
-## 10. Conditional Edges / Branching
+## 11. Conditional Edges / Branching
 
 ```bash
 curl -s -X POST localhost:18282/langgraph/branching \
@@ -481,7 +561,7 @@ response tells you which) and produces a structurally different answer
 `add_conditional_edges` actually changed which node ran, not just which
 answer came back.
 
-## 11. Cycles / Loops
+## 12. Cycles / Loops
 
 ```bash
 curl -s -X POST localhost:18282/langgraph/cycles \
@@ -507,7 +587,7 @@ reliably returns `met_target: false` with `attempts_used` equal to
 `max_attempts` — the graph ran out of retries and terminated via
 `should_continue`'s second condition instead of looping forever.
 
-## 12. Streaming Graph Execution
+## 13. Streaming Graph Execution
 
 ```bash
 curl -N -X POST localhost:18282/langgraph/streaming \
@@ -523,7 +603,7 @@ right after and count the difference: dozens of tiny token chunks with no
 node information at all. Same underlying idea (streaming instead of
 waiting for the full response), two different granularities.
 
-## 13. Human-in-the-Loop / Interrupts
+## 14. Human-in-the-Loop / Interrupts
 
 ```bash
 curl -s -X POST localhost:18282/langgraph/interrupts/start \
@@ -550,7 +630,7 @@ message rather than crashing, proving there's real, checkable state
 behind "is this thread actually paused" (`graph.get_state(config).next`),
 not just an assumption that every resume call is valid.
 
-## 14. Persistence / Checkpointers (Standalone)
+## 15. Persistence / Checkpointers (Standalone)
 
 ```bash
 curl -s -X POST localhost:18282/langgraph/persistence/demo-counter
@@ -574,7 +654,7 @@ curl -s -X POST "localhost:18282/langgraph/persistence/restart-proof?memory_back
 
 The second call after restart shows `count: 2`, not `count: 1`.
 
-## 15. Multi-Agent / Subgraphs
+## 16. Multi-Agent / Subgraphs
 
 ```bash
 curl -s -X POST localhost:18282/langgraph/multi-agent \
@@ -593,7 +673,7 @@ just two branches of plain function calls (contrast with §10's
 branching demo, where the specialists are plain functions, not their own
 graphs).
 
-## 16. RAG (query rewriter + retriever + generator sub-graphs)
+## 17. RAG (query rewriter + retriever + generator sub-graphs)
 
 ```bash
 # Turn 1 — no history yet, query rewriter is a pass-through.
@@ -625,3 +705,44 @@ curl -s -w '\n%{http_code}\n' -X POST "localhost:18282/langgraph/rag/testing-doc
 See [docs/langgraph/08-rag.md](langgraph/08-rag.md) for the full design,
 all three sub-graphs' diagrams, and the independent `rewrite_eval`/
 `rerank`/`generation_eval` flags.
+
+## 18. MCP Client (LangGraph)
+
+Needs `scripts/start_mcp_server.sh` running first (port `18383`).
+
+```bash
+curl -s -X POST localhost:18282/langgraph/mcp \
+  -H 'Content-Type: application/json' -d '{"question": "what is 100 divided by 4?"}'
+```
+
+**Why this input demonstrates the concept:** the same MCP-sourced
+`divider` tool §9's LangChain version would fetch, called from inside a
+single-node `StateGraph` instead of a plain chain — proof an MCP tool is
+just a LangChain `BaseTool` regardless of which framework's execution
+model invokes it.
+
+```bash
+# Agent, memory-backed — session_id carries context across calls, same
+# proof pattern as §6d and §9.
+curl -s -X POST "localhost:18282/langgraph/mcp/agent?session_id=testing-doc-lg-mcp-agent" \
+  -H 'Content-Type: application/json' -d '{"question": "what is 3+4?"}'
+curl -s -X POST "localhost:18282/langgraph/mcp/agent?session_id=testing-doc-lg-mcp-agent" \
+  -H 'Content-Type: application/json' -d '{"question": "what happens when I add 5 to it?"}'
+
+# memory_backend=redis is NOT supported for this agent — expect a clean 400:
+curl -s -w '\n%{http_code}\n' -X POST "localhost:18282/langgraph/mcp/agent?memory_backend=redis" \
+  -H 'Content-Type: application/json' -d '{"question": "what is 9 times 8?"}'
+```
+
+**Why this input demonstrates the concept:** turn 2's `steps` shows
+`adder(7, 5)` called exactly once — proof `session_id` carried context AND
+`AGENT_SYSTEM_PROMPT` (imported from `langchain_demo.react_agent`) stops
+the same tool-call repeat loop found in §6d, here inside a LangGraph-native
+`create_react_agent` + `checkpointers.py` checkpointer instead of
+`langchain_demo`'s per-backend files. The `redis` call demonstrates a real
+constraint, not a bug to file: this agent runs via `.ainvoke()`, and
+`checkpointers.py`'s `RedisSaver`/`PostgresSaver` are sync-only — see
+`docs/langgraph/09-mcp-client.md`'s Gotchas for why.
+
+See [docs/langgraph/09-mcp-client.md](langgraph/09-mcp-client.md) and
+[docs/mcp-server.md](mcp-server.md) for the full design.

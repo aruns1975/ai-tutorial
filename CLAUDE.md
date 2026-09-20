@@ -18,6 +18,14 @@ they're deliberately separate packages rather than one.
   `models/embedding_models/`), plus `models/model_utils.py` (the
   `fetch_all_models` factory) and `models/chat_models/ollama_models.py`'s
   `SupportedModel` enum + `get_chat_model` fetcher. Top-level, shared.
+- `mcp_server/` — this project's own MCP server: `server.py` builds the
+  `FastMCP` instance, `tools.py`/`prompts.py`/`resources.py` register a
+  curated `tools/*.py` subset, one prompt, and two resources onto it. Top-
+  level, shared (like `tools/`/`models/`) since both `langchain_demo/` and
+  `langgraph_demo/` connect to it. `run_mcp_server.py` (project root) is
+  the thin entry point that runs it — see `docs/mcp-server.md` for the
+  full design, including why it's not named `mcp.py` (shadows the
+  installed `mcp` package).
 - `langchain_demo/` — one file per LangChain concept. Framework-agnostic:
   plain functions returning dicts/Pydantic models/async generators. Never
   imports FastAPI. Memory and Agents are both partial exceptions to "one
@@ -110,10 +118,15 @@ they're deliberately separate packages rather than one.
   `langgraph_demo/*.py` concept is sync (`graph.invoke(...)`) — **except**
   `langgraph_streaming_controller.py`, which is `async def` since
   `streaming_graph.py`'s `stream_stategraph_demo` is an async generator
-  (`graph.astream(...)`), and `langgraph_rag_controller.py`, which is
+  (`graph.astream(...)`), `langgraph_rag_controller.py`, which is
   `async def` since `rag/graph.py`'s `run_rag_demo` calls the `retriever`
   sub-graph's `.ainvoke()` (its `retrieve` node is async, to support the
-  Postgres vector backend's async driver).
+  Postgres vector backend's async driver), and `langgraph_mcp_controller.py`,
+  which is `async def` since `mcp_client.py`'s single node awaits the MCP
+  client. `mcp_client_controller.py` (LangChain side) is likewise
+  `async def` for the same reason — every one of its three route
+  functions awaits `langchain_demo/mcp_client.py`'s `MultiServerMCPClient`
+  calls.
 - **`.env` holds no real secrets** — it's committed to git, and it is the
   single source of truth for every variable name the app/infra uses
   (including for deployment: grep it for `${` to get the exact list of
@@ -129,7 +142,7 @@ they're deliberately separate packages rather than one.
   `python-dotenv`'s `load_dotenv()` in code (see `tools/search_tools.py`,
   `langchain_demo/rag_demo.py`).
 
-## Adding a 9th concept
+## Adding a 10th concept
 
 1. `langchain_demo/<slug>.py` — the concept function(s). Accept
    `model: SupportedModel = SupportedModel.llama3_2` and call
@@ -154,7 +167,7 @@ they're deliberately separate packages rather than one.
 
 Never add ad hoc routes directly in `main.py`.
 
-## Adding an 8th LangGraph concept
+## Adding a 10th LangGraph concept
 
 Same shape as above, in the sibling package:
 
@@ -260,21 +273,32 @@ Same shape as above, in the sibling package:
   Running this way bypasses `resolve_env()`'s prompt, so it only works if
   the required external vars are already exported or `.env.local` already
   has them (e.g. after running `scripts/start_app.sh` once).
-- `scripts/start_app.sh|stop_app.sh|status_app.sh` and `scripts/start_infra.sh|stop_infra.sh|status_infra.sh`
+- `scripts/start_app.sh|stop_app.sh|status_app.sh`,
+  `scripts/start_infra.sh|stop_infra.sh|status_infra.sh`, and
+  `scripts/start_mcp_server.sh|stop_mcp_server.sh|status_mcp_server.sh`
   must keep working unmodified.
-- `tools/` and `models/` must stay top-level (not nested under
-  `langchain_demo/` or `langgraph_demo/`) — both are intentionally
-  shared/reused as-is by both packages.
+- `tools/`, `models/`, and `mcp_server/` must stay top-level (not nested
+  under `langchain_demo/` or `langgraph_demo/`) — all three are
+  intentionally shared/reused as-is by both packages.
+- The root entry point for the MCP server must never be named `mcp.py` —
+  verified this shadows the installed `mcp` PyPI package and breaks every
+  `from mcp.server...` import in the project. It's `run_mcp_server.py`.
 - `langgraph_demo/branching.py` and `langgraph_demo/multi_agent.py` both
-  import `langchain_demo.tool_utils.create_tool_caller` — this one
-  cross-package import is intentional (a genuinely generic utility, same
-  status as importing from `models/`), unlike the checkpointer code
-  which was deliberately *not* shared across packages that way.
+  import `langchain_demo.tool_utils.create_tool_caller`, and
+  `langgraph_demo/mcp_client.py` imports
+  `langchain_demo.react_agent.AGENT_SYSTEM_PROMPT` — these cross-package
+  imports are intentional (genuinely generic utilities, same status as
+  importing from `models/`), unlike the checkpointer/persistence code
+  which was deliberately *not* shared across packages that way (each
+  package keeps its own `AgentMemoryBackend`/`CheckpointBackend` and
+  redis/postgres builders).
 - `.env` must never regain a hardcoded secret — indirection is the point.
-- `.claude/skills/app-lifecycle/`, `.claude/skills/infra-lifecycle/`, and
-  `.claude/commands/app.md`/`infra.md` are project-level (committed, travel
-  with the repo). They reference the six lifecycle scripts by their
-  current names — if a script is ever renamed again, update these too.
+- `.claude/skills/app-lifecycle/`, `.claude/skills/infra-lifecycle/`,
+  `.claude/skills/mcp-server-lifecycle/`, and
+  `.claude/commands/app.md`/`infra.md`/`mcp.md` are project-level
+  (committed, travel with the repo). They reference the nine lifecycle
+  scripts by their current names — if a script is ever renamed again,
+  update these too.
 
 ## Verified facts (don't "fix" these again)
 
@@ -352,3 +376,73 @@ Same shape as above, in the sibling package:
   even after several retries (verified: the version without feedback
   used all `max_attempts` and still failed on some topics; the version
   with feedback converges in 1 attempt on the same topics).
+- `mcp_server/tools.py`'s `mcp.add_tool(fn)` correctly builds a JSON
+  schema from `tools/math_tools.py`'s `int | float` union parameter
+  types with no changes needed to those functions — verified live via
+  the MCP server's actual tool list, not assumed from docs.
+- `langchain_demo/mcp_client.py` and `langgraph_demo/mcp_client.py`
+  connect to the MCP server unreachable-safely: `MultiServerMCPClient(...)`
+  never raises at construction time (no connection happens until
+  `get_tools()`/`get_prompt()`/`get_resources()` is actually called), and
+  when the server IS down, the underlying failure surfaces as a generic
+  `ExceptionGroup` (not a specific catchable type) — both controllers
+  catch broadly and return a `503` pointing at
+  `scripts/start_mcp_server.sh`, verified live to no longer 500.
+- `langchain_demo/mcp_client.py`'s `run_mcp_agent_demo` originally
+  shipped stateless (no `session_id`) — fixed by giving it the same
+  `session_id`/`memory_backend` shape as `react_agent.py`'s
+  `run_agent_demo` (reusing that file's `AgentMemoryBackend` and
+  redis/postgres checkpointer builders directly). This alone was **not**
+  sufficient, and don't re-diagnose it as the fix: with `session_id`
+  correctly wired and gemma4 correctly recalling the previous turn's
+  result, `create_react_agent`'s default ReAct loop was still verified
+  live to re-call a tool with IDENTICAL arguments over a dozen times
+  after already getting the correct result, before finally emitting a
+  plain-text final message (`react_agent.py`, `/langchain/agents`,
+  `session_id=ses123`, gemma4, "what is 3+4?" then "what happens when I
+  add 5 to it?" — `steps` showed `adder(7, 5)` repeated ~14 times). The
+  real fix is `react_agent.py`'s `AGENT_SYSTEM_PROMPT` — an explicit
+  "respond directly once you have the answer; never repeat an identical
+  tool call" instruction passed as `create_react_agent(..., prompt=...)`
+  — verified live to bring the same two-turn conversation down to
+  exactly one `adder` call per turn, reproduced clean across 3 separate
+  sessions. `AGENT_SYSTEM_PROMPT` is deliberately public (not
+  underscore-prefixed) and reused verbatim by BOTH
+  `langchain_demo/mcp_client.py`'s and `langgraph_demo/mcp_client.py`'s
+  `run_mcp_agent_demo` — all three go through `create_react_agent`, so
+  all three needed the same guard; don't let them drift into separately-
+  maintained copies of the same instruction. All three agents also now
+  pass an explicit `recursion_limit=15` (instead of LangGraph's default
+  25) as a backstop in case the prompt instruction ever doesn't hold for
+  some input — `agents_controller.py`,
+  `controllers/mcp_client_controller.py`'s `_agent_error`, and
+  `controllers/langgraph_mcp_controller.py` all catch
+  `GraphRecursionError` and report it distinctly from an unreachable MCP
+  server, since folding it into the generic connectivity-error handling
+  would mislabel a stuck agent as a down server.
+- `langgraph_demo/mcp_client.py`'s `run_mcp_agent_demo` (the memory-backed
+  `create_react_agent` counterpart to its single-node `run_mcp_client_demo`)
+  only supports `memory_backend=memory` — verified live that
+  `memory_backend=redis`/`postgres` raise a bare `NotImplementedError`
+  from `BaseCheckpointSaver.aget_tuple`, because this function is invoked
+  via `.ainvoke()` (MCP calls are async) but
+  `langgraph_demo/checkpointers.py`'s `RedisSaver`/`PostgresSaver`
+  builders are sync-only and don't implement the async checkpoint
+  interface. Async-capable classes exist
+  (`langgraph.checkpoint.redis.AsyncRedisSaver`,
+  `langgraph.checkpoint.postgres.aio.AsyncPostgresSaver`) but aren't
+  wired up — don't add them to `checkpointers.py` casually; that file's
+  builders are shared with `persistence.py`/`interrupts.py`, which are
+  sync (`.invoke()`) and must keep working unmodified. `run_mcp_agent_demo`
+  raises a clear `ValueError` (→ `400` via `langgraph_mcp_controller.py`)
+  for any backend other than `memory` instead of leaking the raw
+  `NotImplementedError`.
+- `langgraph_demo/mcp_client.py` importing
+  `langchain_demo.react_agent.AGENT_SYSTEM_PROMPT` is intentional
+  cross-package reuse of a small, genuinely generic instruction string —
+  same category as `branching.py`/`multi_agent.py` importing
+  `langchain_demo.tool_utils.create_tool_caller` (see "What must not
+  break" above). It does NOT reuse `AgentMemoryBackend` or any
+  redis/postgres checkpointer code from `langchain_demo` — those stay
+  package-local per the existing split (`langgraph_demo` uses its own
+  `checkpointers.py`).

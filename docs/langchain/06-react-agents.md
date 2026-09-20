@@ -35,13 +35,37 @@ def create_agent_cache():
         key = (model, memory_backend)
         if key not in agents:
             checkpointer = _CHECKPOINTER_BUILDERS[memory_backend]()
-            agents[key] = create_react_agent(get_chat_model(model), tools=_AGENT_TOOLS, checkpointer=checkpointer)
+            agents[key] = create_react_agent(
+                get_chat_model(model), tools=_AGENT_TOOLS, checkpointer=checkpointer, prompt=AGENT_SYSTEM_PROMPT
+            )
         return agents[key]
 
     return get_agent
 
 _get_agent = create_agent_cache()
 ```
+
+### `AGENT_SYSTEM_PROMPT` — stopping a tool-call repeat loop
+
+```python
+AGENT_SYSTEM_PROMPT = (
+    "You are a helpful assistant with access to tools. Once a tool call has "
+    "returned a result that answers the user's question, respond directly "
+    "with the final answer in plain text. Never call the same tool with the "
+    "same arguments more than once."
+)
+```
+
+Without this, `gemma4` was observed to re-call a tool with **identical**
+arguments over a dozen times after already getting the correct result,
+before finally emitting a plain-text final message — `create_react_agent`'s
+default ReAct loop has no built-in "stop once you have the answer"
+instruction, and a smaller model doesn't reliably infer it on its own. See
+Gotchas below for the exact reproduction. `llama3.2` didn't need this
+prompt, but it's harmless for it too. `run_agent_demo` also passes an
+explicit `recursion_limit=15` (instead of LangGraph's default 25) as a
+backstop, so a genuine runaway case fails fast with a clear error instead
+of quietly grinding through many more rounds.
 
 The file's source has a full comment block contrasting this with a bare
 module-level `_agents` dict (what this file used to look like, before
@@ -134,3 +158,15 @@ curl -s -X POST "localhost:18282/langchain/agents?memory_backend=postgres&sessio
   `redis`/`postgres` without ever passing `session_id` still does I/O per
   call, it just never accumulates visible history. Pass `session_id` to
   actually see the persistence.
+- **A correct `session_id` is not enough to prevent a tool-call repeat
+  loop on its own** — verified live with gemma4: `session_id=ses123`,
+  "what is 3+4?" then "what happens when I add 5 to it?". The agent
+  correctly recalled the previous result (7) and correctly computed
+  `adder(7, 5) = 12` on its *first* attempt, then called the exact same
+  `adder(7, 5)` again — and again, ~14 times total — before finally
+  responding with plain text `"12"`. `AGENT_SYSTEM_PROMPT` (above) is
+  the actual fix; reproduced clean (one `adder` call per turn) across 3
+  separate sessions after adding it. Don't re-diagnose a report like
+  this as a memory/session bug without checking `steps` first — the
+  giveaway is a tool called with **identical** args more than once in a
+  row after the correct result already appeared.
