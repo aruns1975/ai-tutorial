@@ -723,23 +723,32 @@ model invokes it.
 
 ```bash
 # Agent, memory-backed — session_id carries context across calls, same
-# proof pattern as §6d and §9.
-curl -s -X POST "localhost:18282/langgraph/mcp/agent?session_id=testing-doc-lg-mcp-agent" \
+# proof pattern as §6d and §9. Turn 3 is a harder question (needs two
+# NEW tool calls, not one) that stresses the repeat-call guard more than
+# turn 2 alone does.
+S=testing-doc-lg-mcp-agent
+curl -s -X POST "localhost:18282/langgraph/mcp/agent?model=gemma4&session_id=$S" \
   -H 'Content-Type: application/json' -d '{"question": "what is 3+4?"}'
-curl -s -X POST "localhost:18282/langgraph/mcp/agent?session_id=testing-doc-lg-mcp-agent" \
+curl -s -X POST "localhost:18282/langgraph/mcp/agent?model=gemma4&session_id=$S" \
   -H 'Content-Type: application/json' -d '{"question": "what happens when I add 5 to it?"}'
+curl -s -X POST "localhost:18282/langgraph/mcp/agent?model=gemma4&session_id=$S" \
+  -H 'Content-Type: application/json' -d '{"question": "what is 4+5+6"}'
 
 # memory_backend=redis is NOT supported for this agent — expect a clean 400:
 curl -s -w '\n%{http_code}\n' -X POST "localhost:18282/langgraph/mcp/agent?memory_backend=redis" \
   -H 'Content-Type: application/json' -d '{"question": "what is 9 times 8?"}'
 ```
 
-**Why this input demonstrates the concept:** turn 2's `steps` shows
-`adder(7, 5)` called exactly once — proof `session_id` carried context AND
-`AGENT_SYSTEM_PROMPT` (imported from `langchain_demo.react_agent`) stops
-the same tool-call repeat loop found in §6d, here inside a LangGraph-native
-`create_react_agent` + `checkpointers.py` checkpointer instead of
-`langchain_demo`'s per-backend files. The `redis` call demonstrates a real
+**Why this input demonstrates the concept:** turn 3's `final_answer` is
+15, computed from `adder(4,5)=9` then `adder(9,6)=15` — a genuine
+LangGraph reason/act loop (`call_model` <-> `call_tools`, both hand-built
+`StateGraph` nodes, see `docs/langgraph/09-mcp-client.md`), not
+`langgraph.prebuilt.create_react_agent` (which `langchain_demo`'s MCP
+agent uses instead). `steps` may show `adder(4,5)` repeated — that's
+expected here and is exactly the case `_find_prior_tool_result` was
+added for: verified live that repeated calls reuse the identical cached
+MCP response rather than re-invoking the tool, so the repeats are cheap,
+not a real second execution. The `redis` call demonstrates a real
 constraint, not a bug to file: this agent runs via `.ainvoke()`, and
 `checkpointers.py`'s `RedisSaver`/`PostgresSaver` are sync-only — see
 `docs/langgraph/09-mcp-client.md`'s Gotchas for why.

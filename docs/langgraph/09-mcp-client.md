@@ -6,11 +6,20 @@ The LangGraph-flavored counterpart to `docs/langchain/09-mcp-client.md`,
 in two parts: a single-node `StateGraph` (`run_mcp_client_demo`) that calls
 tools fetched from this project's own MCP server (`mcp_server/`, see
 `docs/mcp-server.md`) instead of a locally-imported `tools/*.py` function,
-and a memory-backed agent (`run_mcp_agent_demo`) that hands those same
-tools to LangGraph's prebuilt `create_react_agent` with a checkpointer
-attached. Once fetched, an MCP tool is just a LangChain `BaseTool`
-regardless of which framework's execution model calls it — that's true for
-both parts here, same as the LangChain-side concept.
+and a memory-backed agent (`run_mcp_agent_demo`) that's a genuinely
+hand-built LangGraph reason/act loop — an explicit two-node `StateGraph`
+(`call_model` <-> `call_tools`) with a checkpointer attached at compile
+time. Once fetched, an MCP tool is just a LangChain `BaseTool` regardless
+of which framework's execution model calls it — that's true for both
+parts here, same as the LangChain-side concept.
+
+**Why not `langgraph.prebuilt.create_react_agent` here** (unlike
+`langchain_demo/mcp_client.py`'s own `run_mcp_agent_demo`, which does use
+it): a prebuilt hides the reason/act loop behind one call — fine for a
+LangChain-flavored concept, but it defeats the point of a `langgraph_demo`
+concept, which should show the graph itself. Same reasoning
+`docs/langgraph/07-multi-agent.md` already gives for hand-building a
+multi-graph system instead of relying on a prebuilt agent.
 
 Compare to `branching.py`'s `solve_math` node (binds `tools/math_tools.py`
 functions directly via `bind_tools`) and `multi_agent.py` (subgraphs as
@@ -44,26 +53,49 @@ graph node instead of a plain function. Stateless: no session memory.
 ## Code walkthrough — memory-backed agent (`run_mcp_agent_demo`)
 
 ```python
-def create_mcp_agent_cache():
-    agents: dict[tuple[SupportedModel, CheckpointBackend], object] = {}
+async def call_model(state: MessagesState) -> dict:
+    tools = await _client.get_tools(server_name=_SERVER_NAME)
+    response = llm.bind_tools(tools).invoke([SystemMessage(content=AGENT_SYSTEM_PROMPT), *state["messages"]])
+    return {"messages": [response]}
 
-    async def get_agent(model, memory_backend):
-        key = (model, memory_backend)
-        if key not in agents:
-            tools = await _client.get_tools(server_name=_SERVER_NAME)
-            checkpointer = build_checkpointer(memory_backend)
-            agents[key] = create_react_agent(
-                get_chat_model(model), tools=tools, checkpointer=checkpointer, prompt=AGENT_SYSTEM_PROMPT
-            )
-        return agents[key]
+async def call_tools(state: MessagesState) -> dict:
+    tools = await _client.get_tools(server_name=_SERVER_NAME)
+    tools_by_name = {tool.name: tool for tool in tools}
+    last_message = state["messages"][-1]
 
-    return get_agent
+    tool_messages = []
+    for tool_call in last_message.tool_calls:
+        cached_result = _find_prior_tool_result(state["messages"][:-1], tool_call["name"], tool_call["args"])
+        if cached_result is not None:
+            result = cached_result
+        else:
+            tool = tools_by_name[tool_call["name"]]
+            try:
+                result = await tool.ainvoke(tool_call["args"])
+            except Exception as exc:
+                result = f"Error calling tool '{tool_call['name']}': {exc}"
+        tool_messages.append(ToolMessage(content=result, tool_call_id=tool_call["id"]))
+    return {"messages": tool_messages}
+
+graph = StateGraph(MessagesState)
+graph.add_node("call_model", call_model)
+graph.add_node("call_tools", call_tools)
+graph.add_edge(START, "call_model")
+graph.add_conditional_edges("call_model", route_after_model)  # "call_tools" or END
+graph.add_edge("call_tools", "call_model")
+return graph.compile(checkpointer=build_checkpointer(memory_backend))
 ```
 
-The LangGraph-native sibling of `langchain_demo/mcp_client.py`'s
-`run_mcp_agent_demo`, and the `create_react_agent` counterpart to this
-file's single-node `run_mcp_client_demo` — same relationship
-`react_agent.py` has to `tool_calling.py`. Two deliberate reuse choices:
+```
+START -> call_model --[tool_calls present]--> call_tools --> call_model (loop)
+                     --[no tool_calls]-------> END
+```
+
+`MessagesState` (`langgraph.graph.MessagesState`) is a core LangGraph
+primitive — a `TypedDict` with `messages: Annotated[list, add_messages]`
+— not a LangChain agent abstraction; this is the same reason/act loop
+`create_react_agent` runs internally, just written out as explicit nodes
+and edges. Two deliberate reuse choices, same as before:
 
 - **Checkpointer**: `langgraph_demo/checkpointers.py`'s
   `CheckpointBackend`/`build_checkpointer` — this package's own shared
@@ -73,11 +105,24 @@ file's single-node `run_mcp_client_demo` — same relationship
   root `CLAUDE.md` — each package keeps its own persistence story.
 - **`AGENT_SYSTEM_PROMPT`**: imported directly from
   `langchain_demo.react_agent` — a small, genuinely generic instruction
-  (not persistence logic), so it's reused rather than re-derived. Without
-  it, `create_react_agent`'s default loop was found to re-call a tool with
-  identical arguments many times after already having the answer — see
-  `docs/langchain/06-react-agents.md`'s Gotchas for the original
-  reproduction.
+  (not persistence logic), so it's reused rather than re-derived. It's
+  prepended to the message list at inference time in `call_model`, never
+  persisted into `state["messages"]` itself (so it isn't duplicated on
+  every turn).
+
+**`_find_prior_tool_result` — a benefit hand-building buys you.**
+`call_tools` checks the accumulated message history for a tool already
+called with the exact same name/args and, if found, reuses that result
+instead of re-invoking the tool. `AGENT_SYSTEM_PROMPT` alone (see
+`docs/langchain/06-react-agents.md`'s Gotchas) was found to reduce but
+not eliminate gemma4 re-calling a tool with identical arguments several
+times in a longer conversation — this is a hard, deterministic backstop
+for exactly that case, something you can't easily add to a prebuilt
+`create_react_agent` without reaching into its internals. It makes a
+repeat *cheap* (no real tool re-invocation — verified live: repeated
+calls return the identical cached MCP response object, not a fresh one),
+but doesn't stop the model from *asking* again, which is why
+`_AGENT_RECURSION_LIMIT` still matters — see Gotchas below.
 
 `session_id` is LangGraph's `thread_id`, same shape as
 `langchain_demo/mcp_client.py`'s agent: omit it for a stateless
@@ -85,8 +130,8 @@ single-shot call, pass the same value across calls for multi-turn memory.
 
 ## Why both are `.ainvoke()`, not `.invoke()`
 
-Both `call_mcp_tools` and `run_mcp_agent_demo`'s agent invocation are
-async (they await the MCP client), so this is one of the few
+`call_mcp_tools`, and both `call_model`/`call_tools` in the agent graph,
+are async (they await the MCP client), so this is one of the few
 `langgraph_demo/*.py` concepts — alongside `streaming_graph.py` and
 `rag/graph.py` — invoked via `.ainvoke()` rather than `.invoke()`. Every
 other concept's node functions are plain sync functions.
@@ -125,15 +170,27 @@ curl -s -X POST "localhost:18282/langgraph/mcp/agent?session_id=demo" \
 - Same as `docs/langchain/09-mcp-client.md`: a tool call that raises is
   caught and fed back to the model as the tool's result string, not left
   to crash the request.
-- `run_mcp_client_demo`'s per-model cache (`create_graph_cache()`) caches
-  the compiled graph, not the fetched tool list — tools are re-fetched
-  from the MCP server on every invocation of `call_mcp_tools`, so a change
-  to `mcp_server/tools.py` (after restarting the MCP server) is picked up
-  without needing to restart the FastAPI app or clear any cache here.
-  `run_mcp_agent_demo`'s cache works differently: tools ARE baked into the
-  compiled agent at first use per `(model, memory_backend)` pair (required
-  by `create_react_agent`), so a `mcp_server/tools.py` change needs a
-  FastAPI app restart to be picked up there.
+- Both `create_graph_cache()` and `create_mcp_agent_cache()` cache only
+  the *compiled graph*, not the fetched tool list — `call_mcp_tools`,
+  `call_model`, and `call_tools` all re-fetch tools from the MCP server
+  on every node execution, so a change to `mcp_server/tools.py` (after
+  restarting the MCP server) is picked up without needing to restart the
+  FastAPI app or clear any cache here. This is unlike
+  `langchain_demo/mcp_client.py`'s `create_react_agent`-based agent,
+  where tools ARE baked in at compile time (required by that prebuilt) —
+  one benefit of the hand-built graph here.
+- **A repeated tool call is cheap, not eliminated.**
+  `_find_prior_tool_result`'s cache means a duplicate `adder(4, 5)`
+  request doesn't re-invoke the real MCP tool, but the model can still
+  *ask* for it several times in a row, and each ask still consumes one
+  graph step — verified live: a 3-turn gemma4 conversation ending in a
+  question needing 2 new tool calls sometimes needed 4-6 total tool-call
+  steps in that final turn (extra ones all served from cache) before
+  converging on the correct answer. `_AGENT_RECURSION_LIMIT = 20` (raised
+  from an initial `15` once the cache was added — a wasted step is now
+  just one extra LLM call, not a real tool re-invocation) is the backstop
+  for cases that don't converge in time; hitting it raises
+  `GraphRecursionError` → `500`, not the connectivity `503`.
 - **`memory_backend=redis`/`postgres` raise a clean `400`, not
   `NotImplementedError`.** `run_mcp_agent_demo` is invoked via
   `.ainvoke()` (MCP calls are async), but `checkpointers.py`'s

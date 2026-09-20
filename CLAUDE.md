@@ -409,24 +409,40 @@ Same shape as above, in the sibling package:
   — verified live to bring the same two-turn conversation down to
   exactly one `adder` call per turn, reproduced clean across 3 separate
   sessions. `AGENT_SYSTEM_PROMPT` is deliberately public (not
-  underscore-prefixed) and reused verbatim by BOTH
-  `langchain_demo/mcp_client.py`'s and `langgraph_demo/mcp_client.py`'s
-  `run_mcp_agent_demo` — all three go through `create_react_agent`, so
-  all three needed the same guard; don't let them drift into separately-
-  maintained copies of the same instruction. All three agents also now
+  underscore-prefixed) and reused verbatim by `langchain_demo/mcp_client.py`'s
+  `run_mcp_agent_demo` too (both it and `react_agent.py` go through
+  `langgraph.prebuilt.create_react_agent`) — don't let them drift into
+  separately-maintained copies of the same instruction. Both agents also
   pass an explicit `recursion_limit=15` (instead of LangGraph's default
   25) as a backstop in case the prompt instruction ever doesn't hold for
-  some input — `agents_controller.py`,
-  `controllers/mcp_client_controller.py`'s `_agent_error`, and
-  `controllers/langgraph_mcp_controller.py` all catch
+  some input — `agents_controller.py` and
+  `controllers/mcp_client_controller.py`'s `_agent_error` both catch
   `GraphRecursionError` and report it distinctly from an unreachable MCP
   server, since folding it into the generic connectivity-error handling
   would mislabel a stuck agent as a down server.
-- `langgraph_demo/mcp_client.py`'s `run_mcp_agent_demo` (the memory-backed
-  `create_react_agent` counterpart to its single-node `run_mcp_client_demo`)
-  only supports `memory_backend=memory` — verified live that
+- `langgraph_demo/mcp_client.py`'s `run_mcp_agent_demo` does NOT use
+  `create_react_agent` — deliberately hand-built as an explicit two-node
+  `StateGraph` (`call_model` <-> `call_tools`, using the core
+  `langgraph.graph.MessagesState` primitive) instead, since a
+  `langgraph_demo` concept should show the reason/act loop itself, not
+  hide it behind a prebuilt (same reasoning `multi_agent.py` already
+  gives for hand-building over relying on a prebuilt agent). This was a
+  deliberate correction — an earlier version of this function did use
+  `create_react_agent`; don't reintroduce it here. Building the loop by
+  hand enabled a fix a prebuilt can't easily offer:
+  `_find_prior_tool_result` checks accumulated message history for a
+  tool already called with identical name/args and reuses that result
+  instead of re-invoking the tool — verified live (repeated calls return
+  the identical cached MCP response object, not a fresh one). This makes
+  a repeat *cheap*, but doesn't stop the model from *asking* again, so
+  `_AGENT_RECURSION_LIMIT` was raised to `20` (from `15`) once this cache
+  existed — a wasted step is now one extra LLM call, not a real tool
+  re-invocation. Reuses `AGENT_SYSTEM_PROMPT` from
+  `langchain_demo.react_agent` still (see "must not break" above), but
+  NOT `create_react_agent` itself.
+  Only supports `memory_backend=memory` — verified live that
   `memory_backend=redis`/`postgres` raise a bare `NotImplementedError`
-  from `BaseCheckpointSaver.aget_tuple`, because this function is invoked
+  from `BaseCheckpointSaver.aget_tuple`, because this graph is invoked
   via `.ainvoke()` (MCP calls are async) but
   `langgraph_demo/checkpointers.py`'s `RedisSaver`/`PostgresSaver`
   builders are sync-only and don't implement the async checkpoint
