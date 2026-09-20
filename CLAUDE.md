@@ -226,8 +226,10 @@ Same shape as above, in the sibling package:
   `react_agent_redis.py`'s `ai_tutorial_agent_checkpoint`).
 - Postgres's `vector` extension (`docker/postgres/init/001-enable-pgvector.sql`)
   and the app user role (`docker/postgres/init/002-create-app-user.sh`) only
-  run against a **fresh** volume — `docker compose down -v` if either ever
-  needs to re-run.
+  run against a **fresh** volume — `scripts/stop_infra.sh --remove-volume`
+  (then `scripts/start_infra.sh`) if either ever needs to re-run; this is
+  the sanctioned way to do `docker compose down -v` for this project's
+  infra, not raw `docker compose` commands.
 - Postgres has a **root/app user split**: `POSTGRES_ROOT_USER`/`_PASSWORD`
   only bootstrap the container; the app connects as `POSTGRES_APP_USER`/
   `_PASSWORD` (a least-privilege role created by the init script). Never

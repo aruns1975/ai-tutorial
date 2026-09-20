@@ -64,4 +64,5 @@ docker exec -it ai_tutorial_redis redis-cli FT.INFO ai_tutorial_rag
 ## Gotchas
 
 - Data persists in the `redis_data` Docker volume across app restarts (and
-  across `docker compose restart`), but is wiped by `docker compose down -v`.
+  across `docker compose restart`), but is wiped by
+  `scripts/stop_infra.sh --remove-volume` (equivalent to `docker compose down -v`).

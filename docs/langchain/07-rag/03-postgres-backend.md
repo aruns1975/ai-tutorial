@@ -31,8 +31,9 @@ The `vector` extension is enabled by
 `docker/postgres/init/001-enable-pgvector.sql`; the app user is created by
 `docker/postgres/init/002-create-app-user.sh`. Both run automatically on
 first container start against a fresh volume (they will **not** re-run on
-an existing volume — use `docker compose down -v` if you ever need to force
-them to re-run).
+an existing volume — use `scripts/stop_infra.sh --remove-volume` (then
+`scripts/start_infra.sh`) if you ever need to force them to re-run;
+see the `infra-lifecycle` skill).
 
 ## Why the embedding model is pinned to `qwen3-embedding:0.6b`
 
@@ -134,7 +135,8 @@ docker exec -it ai_tutorial_postgres psql -U ai_tutorial_root -d ai_tutorial_rag
 ## Gotchas
 
 - Data persists in the `postgres_data` Docker volume across app restarts,
-  wiped by `docker compose down -v`.
+  wiped by `scripts/stop_infra.sh --remove-volume` (equivalent to
+  `docker compose down -v`).
 - If you ever swap in a different embedding model/tag with a different
   output dimension, you must drop and recreate the table (the `vector_size`
   is fixed at table-creation time) — connect as the app user and

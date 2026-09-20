@@ -26,7 +26,7 @@ triggers:
   - "start infra"
   - "stop infra"
   - "status infra"
-argument-hint: "[start|stop|status|restart]"
+argument-hint: "[start|stop|status|restart] [remove-volume]"
 ---
 
 # Infra Lifecycle Skill — ai_tutorial Docker infra (Redis + Postgres)
@@ -80,9 +80,22 @@ scripts/stop_infra.sh
 
 - Runs `docker compose down`. Does **not** need secrets resolved — stopping
   doesn't require valid credential values, just the container names.
-- Does not wipe volumes (data persists) unless you separately run
-  `docker compose down -v` — that's destructive and NOT what this script
-  does; only use `-v` if the user explicitly wants a full reset.
+- Retains volumes by default (data persists across a stop/start cycle).
+
+### Stop, removing volumes (destructive)
+
+```bash
+scripts/stop_infra.sh --remove-volume
+```
+
+- Runs `docker compose down -v` instead — wipes the `redis_data`/
+  `postgres_data` named volumes. All RAG/Memory/Agents data on both
+  backends is gone, and Postgres's init scripts (`001-enable-pgvector.sql`,
+  `002-create-app-user.sh`) will re-run from scratch on the next
+  `scripts/start_infra.sh` (they only run against a **fresh** volume).
+- **This is destructive — only run it when the user explicitly asks to
+  wipe/reset the infra's data**, never as a default or "just in case"
+  step. Prefer plain `scripts/stop_infra.sh` unless a reset was requested.
 
 ### Status
 
@@ -101,17 +114,32 @@ scripts/stop_infra.sh
 scripts/start_infra.sh
 ```
 
+### Restart, removing volumes (destructive)
+
+```bash
+scripts/stop_infra.sh --remove-volume
+scripts/start_infra.sh
+```
+
+Same destructiveness caveat as the stop variant — confirm with the user
+first. The subsequent `start_infra.sh` re-provisions Postgres from
+scratch against the now-fresh volume.
+
 ## Decision rules
 
-| User intent                                    | Actions (in order) |
-|--------------------------------------------------|---------------------|
-| "start the infra" / "start postgres/redis"      | start               |
-| "stop the infra"                                | stop                |
-| "infra status" / "is the database running"      | status              |
-| "restart infra"                                 | stop → start        |
-| "reset the database" / "wipe and start fresh"   | `docker compose down -v` → start (confirm with the user first — destructive) |
+| User intent                                              | Actions (in order) |
+|-------------------------------------------------------------|---------------------|
+| "start the infra" / "start postgres/redis"                 | start               |
+| "stop the infra"                                            | stop                |
+| "infra status" / "is the database running"                 | status              |
+| "restart infra"                                             | stop → start (volumes retained) |
+| "stop/wipe the infra and remove the volume/data"            | `stop_infra.sh --remove-volume` (confirm with the user first — destructive) |
+| "reset the database" / "wipe and start fresh"                | `stop_infra.sh --remove-volume` → `start_infra.sh` (confirm with the user first — destructive) |
 
-Always follow the table — never skip steps. Never run `docker compose down -v` without the user explicitly asking for a data wipe.
+Always follow the table — never skip steps. Never run raw
+`docker compose down -v` — use `stop_infra.sh --remove-volume` instead,
+and only when the user explicitly asks for a data wipe; plain
+`stop`/`restart` (no `remove-volume`) must never delete volumes.
 
 ## Error handling
 
@@ -121,7 +149,7 @@ Always follow the table — never skip steps. Never run `docker compose down -v`
 | `start_infra.sh` hangs                      | It's waiting on an interactive password prompt — either answer it, or pre-populate `.env.local` (see `README.md`'s "Secrets and `.env`"). |
 | Container unhealthy                         | `docker compose logs postgres` / `docker compose logs redis`.        |
 | Port 5432 or 6379 already in use            | `lsof -i :5432` / `lsof -i :6379` to find the owner, stop it or change `POSTGRES_PORT` in `.env`. |
-| Init scripts didn't run / app user missing  | They only run on a **fresh** volume — `docker compose down -v` then `start_infra.sh` to force a clean re-init (destructive, confirm with the user first). |
+| Init scripts didn't run / app user missing  | They only run on a **fresh** volume — `stop_infra.sh --remove-volume` then `start_infra.sh` to force a clean re-init (destructive, confirm with the user first). |
 | App can't connect to Postgres               | Check `.env.local` has `RAG_DEMO_PG_APP_PASSWORD` set and matches what was used when the volume was created. |
 
 ## Verifying it's actually up
