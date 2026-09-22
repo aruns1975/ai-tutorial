@@ -1,5 +1,7 @@
 # Memory / Conversation History
 
+> 🧪 **Try it hands-on:** [`jupyter/05-memory-conversation.ipynb`](jupyter/05-memory-conversation.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 Chat models are stateless: each call only sees what you send it. To hold a

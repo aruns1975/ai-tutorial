@@ -1,5 +1,7 @@
 # MCP (Model Context Protocol) Client, Inside a Graph
 
+> 🧪 **Try it hands-on:** [`jupyter/09-mcp-client.ipynb`](jupyter/09-mcp-client.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 The LangGraph-flavored counterpart to `docs/langchain/09-mcp-client.md`,

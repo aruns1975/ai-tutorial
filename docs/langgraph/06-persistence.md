@@ -1,5 +1,7 @@
 # Persistence / Checkpointers (Standalone)
 
+> 🧪 **Try it hands-on:** [`jupyter/06-persistence.ipynb`](jupyter/06-persistence.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 Contrast with `langchain_demo/react_agent.py`: that demo shows a

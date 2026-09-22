@@ -185,6 +185,14 @@ walkthrough of every concept with specific example inputs and an
 explanation of *why* each one demonstrates the concept, so you can run
 through it end-to-end and understand what's happening at each step.
 
+**Prefer to learn by tinkering?** Every concept also has a Jupyter notebook —
+[docs/langchain/jupyter/](docs/langchain/jupyter/) and
+[docs/langgraph/jupyter/](docs/langgraph/jupyter/) — that builds it from
+scratch in isolated, editable cells (not through the FastAPI app), ending in
+a "🧪 Playground" section with starter experiments. No server needs to be
+running except `scripts/start_mcp_server.sh` for the two `09-mcp-client.ipynb`
+notebooks.
+
 ## Local infra for RAG
 
 The RAG concept's `redis` and `postgres` backends need `scripts/start_infra.sh`

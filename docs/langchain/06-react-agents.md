@@ -1,5 +1,7 @@
 # Agents (ReAct-style, tool-using loops)
 
+> 🧪 **Try it hands-on:** [`jupyter/06-react-agents.ipynb`](jupyter/06-react-agents.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 An agent is a loop: the model reasons about what to do, optionally calls a

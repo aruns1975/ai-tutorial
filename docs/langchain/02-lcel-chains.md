@@ -1,5 +1,7 @@
 # LCEL Chains (Runnables, pipe syntax)
 
+> 🧪 **Try it hands-on:** [`jupyter/02-lcel-chains.ipynb`](jupyter/02-lcel-chains.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 LangChain Expression Language (LCEL) lets you compose steps with the `|`

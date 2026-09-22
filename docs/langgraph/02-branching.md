@@ -1,5 +1,7 @@
 # Conditional Edges / Branching
 
+> 🧪 **Try it hands-on:** [`jupyter/02-branching.ipynb`](jupyter/02-branching.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 `add_conditional_edges` routes execution to a different node based on the

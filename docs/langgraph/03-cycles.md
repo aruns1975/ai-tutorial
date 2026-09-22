@@ -1,5 +1,7 @@
 # Cycles / Loops
 
+> 🧪 **Try it hands-on:** [`jupyter/03-cycles.ipynb`](jupyter/03-cycles.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 A graph edge can point back to a node that already ran — LangGraph

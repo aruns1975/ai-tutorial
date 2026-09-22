@@ -1,5 +1,7 @@
 # Streaming
 
+> 🧪 **Try it hands-on:** [`jupyter/08-streaming.ipynb`](jupyter/08-streaming.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 Instead of waiting for a model to finish generating a full response, a

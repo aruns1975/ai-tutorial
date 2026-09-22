@@ -1,5 +1,7 @@
 # Prompts, LLM Calls, and Output Parsers
 
+> 🧪 **Try it hands-on:** [`jupyter/01-prompts-and-parsers.ipynb`](jupyter/01-prompts-and-parsers.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 A `PromptTemplate` (or `ChatPromptTemplate` for chat models) turns user input

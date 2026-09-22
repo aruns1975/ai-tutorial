@@ -1,5 +1,7 @@
 # Tool Calling / Function Calling
 
+> 🧪 **Try it hands-on:** [`jupyter/03-tool-calling.ipynb`](jupyter/03-tool-calling.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 Modern chat models can decide to call an external function instead of

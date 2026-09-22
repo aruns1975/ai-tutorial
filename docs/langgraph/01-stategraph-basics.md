@@ -1,5 +1,7 @@
 # StateGraph Basics
 
+> 🧪 **Try it hands-on:** [`jupyter/01-stategraph-basics.ipynb`](jupyter/01-stategraph-basics.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 The foundational LangGraph building block: a typed state schema, nodes

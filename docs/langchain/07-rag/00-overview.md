@@ -1,5 +1,7 @@
 # RAG (Retrieval-Augmented Generation) — Overview
 
+> 🧪 **Try it hands-on:** [`../jupyter/07-rag.ipynb`](../jupyter/07-rag.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 Retrieval-augmented generation gives a model access to information it

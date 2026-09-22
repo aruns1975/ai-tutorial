@@ -1,5 +1,7 @@
 # Human-in-the-Loop / Interrupts
 
+> 🧪 **Try it hands-on:** [`jupyter/05-interrupts.ipynb`](jupyter/05-interrupts.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 `interrupt()` pauses a graph mid-node and surfaces a value to the caller;

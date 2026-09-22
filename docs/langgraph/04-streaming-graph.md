@@ -1,5 +1,7 @@
 # Streaming Graph Execution
 
+> 🧪 **Try it hands-on:** [`jupyter/04-streaming-graph.ipynb`](jupyter/04-streaming-graph.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 Contrast with `langchain_demo/streaming_demo.py`: that streams individual

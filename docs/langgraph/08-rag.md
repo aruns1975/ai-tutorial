@@ -1,5 +1,7 @@
 # LangGraph RAG — Query Rewriting, Retrieval + Reranking, Generation + Eval
 
+> 🧪 **Try it hands-on:** [`jupyter/08-rag.ipynb`](jupyter/08-rag.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 `langchain_demo/rag_demo.py` demonstrates RAG as a straight-line pipeline:

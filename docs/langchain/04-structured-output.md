@@ -1,5 +1,7 @@
 # Structured Output
 
+> 🧪 **Try it hands-on:** [`jupyter/04-structured-output.ipynb`](jupyter/04-structured-output.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 `with_structured_output()` is a shortcut that binds a schema directly to a

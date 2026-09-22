@@ -1,5 +1,7 @@
 # Multi-Agent / Subgraphs
 
+> 🧪 **Try it hands-on:** [`jupyter/07-multi-agent.ipynb`](jupyter/07-multi-agent.ipynb) — build this concept from scratch, cell by cell, with a Playground section to experiment in.
+
 ## Concept
 
 A compiled `StateGraph` can be used directly as a node in another
