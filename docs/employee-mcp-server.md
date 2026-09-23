@@ -144,6 +144,13 @@ demo endpoint, and is the reason this server exists as a second,
 independent process rather than just more tools on the first one — but
 it's a separate concept-level change, not part of standing the server up.
 
+## Want to see the raw protocol?
+
+See [docs/mcp-protocol.md](mcp-protocol.md) for real `curl` commands
+against this exact server and the actual JSON-RPC request/response pairs
+captured live — `initialize`, `tools/list`, `tools/call` (success and
+error), and the two transport-level rejections a malformed request gets.
+
 ## Gotchas
 
 - The store is in-memory and per-process: restarting the employee MCP

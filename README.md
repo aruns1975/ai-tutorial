@@ -98,6 +98,24 @@ See [docs/mcp-server.md](docs/mcp-server.md) for what it exposes (tools,
 a prompt, two resources) and why it's `run_mcp_server.py` at the root, not
 `mcp.py` (naming collision with the installed `mcp` package).
 
+### Running the employee MCP server
+
+A second, independent MCP server (its own process, port, and in-memory
+data — nothing shared with the one above) exposing CRUD tools over an
+Employee record (id/name/department/dob/salary/phone/email):
+
+```bash
+scripts/start_employee_mcp_server.sh    # port 18384 (EMPLOYEE_MCP_SERVER_PORT in .env)
+scripts/status_employee_mcp_server.sh
+scripts/stop_employee_mcp_server.sh
+```
+
+See [docs/employee-mcp-server.md](docs/employee-mcp-server.md) for the
+tool list and design, and
+[docs/mcp-protocol.md](docs/mcp-protocol.md) for what's actually going
+over the wire when a client talks to either MCP server — real `curl`
+commands and the raw JSON-RPC responses they get back.
+
 ### Using Claude Code? Skip the scripts
 
 This repo ships project-level Claude Code skills and slash commands (in
@@ -105,9 +123,10 @@ This repo ships project-level Claude Code skills and slash commands (in
 clone, so anyone opening this project in Claude Code gets them for free.
 
 ```
-/app start | stop | status | restart      (or just ask: "start the app")
-/infra start | stop | status | restart    (or just ask: "start the infra")
-/mcp start | stop | status | restart      (or just ask: "start the mcp server")
+/app start | stop | status | restart            (or just ask: "start the app")
+/infra start | stop | status | restart          (or just ask: "start the infra")
+/mcp start | stop | status | restart            (or just ask: "start the mcp server")
+/employee-mcp start | stop | status | restart   (or just ask: "start the employee mcp server")
 ```
 
 ## LangChain concepts and endpoints

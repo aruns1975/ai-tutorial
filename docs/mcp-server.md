@@ -148,6 +148,13 @@ a connection by itself; a session is opened per `get_tools()`/
 `get_prompt()`/`get_resources()` call, so both concept modules can hold
 one client singleton safely even before the MCP server has started.
 
+## Want to see the raw protocol?
+
+See [docs/mcp-protocol.md](mcp-protocol.md) for real `curl` commands
+against a running MCP server and the actual JSON-RPC request/response
+pairs they get back — the wire-level conversation `MultiServerMCPClient`
+has with a server, one message at a time.
+
 ## Gotchas
 
 - If the MCP server isn't running, both client concepts' endpoints return a
