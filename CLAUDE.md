@@ -20,11 +20,13 @@ they're deliberately separate packages rather than one.
   `SupportedModel` enum + `get_chat_model` fetcher. Top-level, shared.
 - `mcp_server/` — this project's own MCP server: `server.py` builds the
   `FastMCP` instance, `tools.py`/`prompts.py`/`resources.py` register a
-  curated `tools/*.py` subset, one prompt, and two resources onto it. Top-
-  level, shared (like `tools/`/`models/`) since both `langchain_demo/` and
-  `langgraph_demo/` connect to it. `run_mcp_server.py` (project root) is
-  the thin entry point that runs it — see `docs/mcp-server.md` for the
-  full design, including why it's not named `mcp.py` (shadows the
+  curated `tools/*.py` subset (via `mcp.add_tool(fn)`) plus one
+  `@mcp.tool()`-decorated, MCP-only tool (`server_uptime_seconds`), one
+  prompt, and two resources onto it. Top-level, shared (like
+  `tools/`/`models/`) since both `langchain_demo/` and `langgraph_demo/`
+  connect to it. `run_mcp_server.py` (project root) is the thin entry
+  point that runs it — see `docs/mcp-server.md` for the full design,
+  including why it's not named `mcp.py` (shadows the
   installed `mcp` package).
 - `langchain_demo/` — one file per LangChain concept. Framework-agnostic:
   plain functions returning dicts/Pydantic models/async generators. Never
@@ -382,6 +384,12 @@ Same shape as above, in the sibling package:
   schema from `tools/math_tools.py`'s `int | float` union parameter
   types with no changes needed to those functions — verified live via
   the MCP server's actual tool list, not assumed from docs.
+- `mcp_server/tools.py`'s `@mcp.tool()`-decorated `server_uptime_seconds`
+  (an MCP-only tool with no `tools/*.py` counterpart) builds and invokes
+  identically to the `mcp.add_tool(fn)`-registered tools from a client's
+  point of view — verified live via `/langchain/mcp/tool-calling` with
+  "how long has the MCP server been running?", which correctly called
+  `server_uptime_seconds()` and got a real elapsed-seconds result back.
 - `langchain_demo/mcp_client.py` and `langgraph_demo/mcp_client.py`
   connect to the MCP server unreachable-safely: `MultiServerMCPClient(...)`
   never raises at construction time (no connection happens until

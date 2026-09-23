@@ -26,7 +26,8 @@ extension) would.
 ```
 mcp_server/
   server.py     — builds the FastMCP instance, registers tools/prompts/resources
-  tools.py      — registers a curated tools/*.py subset via mcp.add_tool()
+  tools.py      — registers a curated tools/*.py subset via mcp.add_tool(),
+                  plus one @mcp.tool()-decorated, MCP-only tool
   prompts.py    — one prompt: explain_concept
   resources.py  — two resources: rag-corpus (static file), models (dynamic)
 run_mcp_server.py — root entry point; runs mcp_server.server.mcp_app
@@ -66,6 +67,8 @@ and `sse` is the transport streamable-http superseded.
 
 ## Tools (`mcp_server/tools.py`)
 
+Two ways to register a tool, shown side by side:
+
 ```python
 _MCP_TOOLS = [adder, subtractor, multiplier, divider, reverse_text, word_count,
               is_palindrome, current_date, days_between, circle_area,
@@ -74,16 +77,33 @@ _MCP_TOOLS = [adder, subtractor, multiplier, divider, reverse_text, word_count,
 def register_tools(mcp: FastMCP) -> None:
     for tool in _MCP_TOOLS:
         mcp.add_tool(tool)
+
+    @mcp.tool()
+    def server_uptime_seconds() -> float:
+        """..."""
+        return time.monotonic() - _SERVER_START_TIME
 ```
 
-Every one of these is a plain, undecorated function imported straight from
-`tools/*.py` — the exact same functions `langchain_demo/tool_calling.py` and
-`langchain_demo/react_agent.py` bind via `bind_tools([...])`. `mcp.add_tool(fn)`
-builds the tool's schema from the function's type hints and docstring, so
-`tools/*.py`'s existing docstring convention (module docstring + "Call this
-tool for..." + few-shot examples — see the project root `CLAUDE.md`) is
-reused as-is; nothing about the functions changes to make them
-MCP-servable.
+**`mcp.add_tool(fn)`** — every entry in `_MCP_TOOLS` is a plain, undecorated
+function imported straight from `tools/*.py` — the exact same functions
+`langchain_demo/tool_calling.py` and `langchain_demo/react_agent.py` bind via
+`bind_tools([...])`. This is the right choice whenever a tool is (or could
+be) also used outside MCP: `tools/*.py` must stay a framework-agnostic
+library, so its functions can't be decorated with an MCP-specific decorator.
+
+**`@mcp.tool()`** — used for `server_uptime_seconds`, an MCP-only tool with
+no reason to live in `tools/*.py`: its answer depends on this server
+process's own start time (`_SERVER_START_TIME`, set once at import time),
+not on inputs a shared, reusable function could take. Decorating it in
+place and `mcp.add_tool(fn)` build the exact same kind of `Tool` — both read
+the name/description/schema from the function's name, docstring, and type
+hints — so which one to reach for comes down to "does this function have
+another caller to share it with," not a capability difference.
+
+Either way, `tools/*.py`'s docstring convention (module docstring + "Call
+this tool for..." + few-shot examples — see the project root `CLAUDE.md`)
+is what a tool-calling model reads to pick the right tool, so
+`server_uptime_seconds` follows it too even though it isn't in `tools/*.py`.
 
 ## Prompts (`mcp_server/prompts.py`)
 

@@ -487,6 +487,24 @@ between the two endpoints is that this one fetched it from
 the point, not the arithmetic.
 
 ```bash
+# Tools, the decorator-registered one: mcp_server/tools.py's
+# server_uptime_seconds is defined with @mcp.tool() instead of
+# mcp.add_tool(fn) — this confirms both registration styles produce an
+# equally callable tool from the client's point of view.
+curl -s -X POST localhost:18282/langchain/mcp/tool-calling \
+  -H 'Content-Type: application/json' -d '{"message": "how long has the MCP server been running?"}'
+```
+
+**Why this input demonstrates the concept:** `server_uptime_seconds` in
+the response's `tool_calls` has no backing function in `tools/*.py` at
+all — it only exists because `mcp_server/tools.py`'s `register_tools`
+declared it inline with `@mcp.tool()`. Getting a real elapsed-seconds
+answer back proves the decorator path builds a fully working MCP tool
+(name, docstring-derived description, schema) with no `tools/*.py`
+entry required — see `docs/mcp-server.md`'s "Tools" section for why this
+one, specifically, is a decorator tool rather than a shared function.
+
+```bash
 # Agent: same MCP-sourced tools, but a full ReAct loop instead of the
 # single hand-executed round above. session_id carries memory across
 # calls, same as /langchain/agents.
