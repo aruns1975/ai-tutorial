@@ -92,9 +92,71 @@ this walkthrough reuses.
 
 ## Step 2 — `notifications/initialized`
 
-A one-way notification (no `id`, so no response is expected — just a
-`202 Accepted` with an empty body) telling the server the client has
-finished processing the `initialize` result and is ready to proceed.
+### Why two separate calls instead of one?
+
+`initialize` and `notifications/initialized` do two genuinely different
+jobs, and JSON-RPC has two genuinely different message shapes for them:
+
+- **`initialize` is a *request*** — it needs an answer. Its whole job is
+  **negotiation**: the client proposes a protocol version and lists what
+  it supports (`capabilities`); the server answers with what *it*
+  actually supports (its own `protocolVersion` and `capabilities`, seen
+  in Step 1's response above). Neither side can safely do anything else
+  until this round-trip completes, because neither side yet knows what
+  the other can do.
+- **`notifications/initialized` is a *notification*** — no `id`, no
+  reply. Its job is for the **client** to say "I've seen what you can
+  do, I've finished whatever local setup that implied, and I'm ready for
+  normal traffic now." There's nothing for the server to answer, because
+  the client isn't asking anything — it's just flipping the session from
+  "negotiating" to "live."
+
+The reason this can't just be folded into the `initialize` response
+itself is that the response only tells the *client* something (what the
+server supports) — it says nothing about when the *client* is done
+reacting to that information. A server that started sending
+requests/notifications the instant it sent its `initialize` response
+would be racing ahead of a client that might still be setting up
+handlers for the capabilities it just learned about. The separate
+notification is the client's explicit "go" signal, sent on its own
+schedule.
+
+This is the same two-step shape the Language Server Protocol (LSP) uses
+— MCP's lifecycle is explicitly modeled on it — for exactly the same
+reason: version/capability negotiation is a question-and-answer (needs a
+response), but "I'm ready" is an announcement (doesn't).
+
+**In practice, you never hand-write this.** `mcp.client.session.ClientSession.initialize()`
+— what `MultiServerMCPClient` calls under the hood — does both steps for
+you as one Python call:
+
+```python
+# mcp/client/session.py (this project's installed mcp==1.30.0)
+async def initialize(self) -> types.InitializeResult:
+    result = await self.send_request(types.InitializeRequest(...), types.InitializeResult)
+    ...
+    await self.send_notification(types.InitializedNotification())
+    return result
+```
+
+This walkthrough splits it into two separate `curl` commands purely
+because curl has no notion of "one logical handshake" — each HTTP POST
+is its own request, so the two JSON-RPC messages `initialize()` sends
+become two separate `curl` invocations here.
+
+**A verified gotcha:** the spec expects a server not to treat a session
+as fully live until it's received `notifications/initialized` — but
+`employee_mcp_server`'s underlying `mcp==1.30.0` server implementation
+was verified live to **not** actually enforce that ordering: sending
+`tools/list` immediately after `initialize`, with `notifications/initialized`
+never sent at all, still returned a normal `200` with the full tool
+list. Don't take this as license to skip it, though — it's this
+particular server implementation being lenient, not something the spec
+guarantees, and `MultiServerMCPClient` always sends it anyway (see
+above), so a well-behaved client never needs to rely on that leniency.
+
+On the wire, it's the smallest possible message — no `id`, no `params` —
+and gets back a `202 Accepted` with an empty body, not a JSON-RPC result:
 
 ```bash
 curl -s -D - -X POST http://localhost:18384/mcp \
@@ -226,10 +288,10 @@ block *and* a `structuredContent` field with the actual parsed JSON
 array — a client that wants structured data can read `structuredContent`
 directly instead of re-parsing `content[0].text`:
 
-```json
+```
 {
-  "content": [{"type": "text", "text": "{...employee 1...}"}, {"type": "text", "text": "{...employee 2...}"}],
-  "structuredContent": {"result": [{"id": "...", "name": "...", ...}, {"id": "...", "name": "...", ...}]},
+  "content": [{"type": "text", "text": "<employee 1 as a JSON string>"}, {"type": "text", "text": "<employee 2 as a JSON string>"}],
+  "structuredContent": {"result": [{"id": "d3440af7", "name": "Arun", "...": "..."}, {"id": "e5ed3629", "name": "Satish", "...": "..."}]},
   "isError": false
 }
 ```
