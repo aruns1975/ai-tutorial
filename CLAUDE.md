@@ -28,6 +28,18 @@ they're deliberately separate packages rather than one.
   point that runs it — see `docs/mcp-server.md` for the full design,
   including why it's not named `mcp.py` (shadows the
   installed `mcp` package).
+- `employee_mcp_server/` — a **second, independent** MCP server (CRUD on
+  an in-memory Employee record: id/name/department/dob/salary/phone/email).
+  Same three-layer shape as `mcp_server/` (`server.py`/`tools.py` +
+  `store.py` for the domain logic), but deliberately NOT shared
+  infrastructure like `tools/`/`models/`/`mcp_server/` — its own process,
+  own port (`EMPLOYEE_MCP_SERVER_PORT`, default `18384`), own data,
+  nothing imported by `langchain_demo/`/`langgraph_demo/`. Exists to
+  demonstrate `MultiServerMCPClient` connecting to more than one MCP
+  server (it's keyed by server name, not a single URL) — see
+  `docs/employee-mcp-server.md`, including the "What's not built yet"
+  section: no `langchain_demo`/`langgraph_demo` client concept connects
+  to it yet, that would be a separate, later change.
 - `langchain_demo/` — one file per LangChain concept. Framework-agnostic:
   plain functions returning dicts/Pydantic models/async generators. Never
   imports FastAPI. Memory and Agents are both partial exceptions to "one
@@ -278,15 +290,19 @@ Same shape as above, in the sibling package:
   the required external vars are already exported or `.env.local` already
   has them (e.g. after running `scripts/start_app.sh` once).
 - `scripts/start_app.sh|stop_app.sh|status_app.sh`,
-  `scripts/start_infra.sh|stop_infra.sh|status_infra.sh`, and
-  `scripts/start_mcp_server.sh|stop_mcp_server.sh|status_mcp_server.sh`
+  `scripts/start_infra.sh|stop_infra.sh|status_infra.sh`,
+  `scripts/start_mcp_server.sh|stop_mcp_server.sh|status_mcp_server.sh`, and
+  `scripts/start_employee_mcp_server.sh|stop_employee_mcp_server.sh|status_employee_mcp_server.sh`
   must keep working unmodified.
 - `tools/`, `models/`, and `mcp_server/` must stay top-level (not nested
   under `langchain_demo/` or `langgraph_demo/`) — all three are
-  intentionally shared/reused as-is by both packages.
+  intentionally shared/reused as-is by both packages. `employee_mcp_server/`
+  is also top-level, but for a different reason (see the architecture map
+  above) — it's a standalone second server, not shared infrastructure.
 - The root entry point for the MCP server must never be named `mcp.py` —
   verified this shadows the installed `mcp` PyPI package and breaks every
-  `from mcp.server...` import in the project. It's `run_mcp_server.py`.
+  `from mcp.server...` import in the project. It's `run_mcp_server.py`
+  (and, for the employee MCP server, `run_employee_mcp_server.py`).
 - `langgraph_demo/branching.py` and `langgraph_demo/multi_agent.py` both
   import `langchain_demo.tool_utils.create_tool_caller`, and
   `langgraph_demo/mcp_client.py` imports
@@ -299,10 +315,11 @@ Same shape as above, in the sibling package:
 - `.env` must never regain a hardcoded secret — indirection is the point.
 - `.claude/skills/app-lifecycle/`, `.claude/skills/infra-lifecycle/`,
   `.claude/skills/mcp-server-lifecycle/`, and
-  `.claude/commands/app.md`/`infra.md`/`mcp.md` are project-level
-  (committed, travel with the repo). They reference the nine lifecycle
-  scripts by their current names — if a script is ever renamed again,
-  update these too.
+  `.claude/skills/employee-mcp-server-lifecycle/`, plus
+  `.claude/commands/app.md`/`infra.md`/`mcp.md`/`employee-mcp.md`, are
+  project-level (committed, travel with the repo). They reference the
+  twelve lifecycle scripts by their current names — if a script is ever
+  renamed again, update these too.
 
 ## Verified facts (don't "fix" these again)
 
@@ -390,6 +407,15 @@ Same shape as above, in the sibling package:
   point of view — verified live via `/langchain/mcp/tool-calling` with
   "how long has the MCP server been running?", which correctly called
   `server_uptime_seconds()` and got a real elapsed-seconds result back.
+- `employee_mcp_server/`'s full CRUD cycle (create/get/update/list/delete)
+  was verified live end-to-end via a direct `MultiServerMCPClient`
+  connection to `http://localhost:18384/mcp` — including that
+  `update_employee`'s partial-update semantics (only non-`None` args
+  change) work correctly, and that a post-delete `get_employee` call
+  surfaces the raised `ValueError` as clean error text rather than a raw
+  exception. No FastAPI endpoint exercises this server yet, so this
+  direct-client script (see `docs/employee-mcp-server.md`'s "Verifying
+  it works") is the only verification path until one exists.
 - `langchain_demo/mcp_client.py` and `langgraph_demo/mcp_client.py`
   connect to the MCP server unreachable-safely: `MultiServerMCPClient(...)`
   never raises at construction time (no connection happens until
